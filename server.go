@@ -3,13 +3,13 @@ package server
 import (
 	"context"
 	"net/http"
-	"transactional-outbox-pattern/mail"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-redis/redis/v8"
 	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 
 	"transactional-outbox-pattern/config"
+	"transactional-outbox-pattern/mail"
 	"transactional-outbox-pattern/queue"
 	"transactional-outbox-pattern/task"
 )
@@ -29,12 +29,12 @@ type Server struct {
 }
 
 func (s *Server) CloseResources(ctx context.Context) {
-	_ = s.DB.Close()
+	_ = s.Asynq.Client.Close()
+	s.Asynq.Server.Shutdown()
 
+	_ = s.DB.Close()
 	s.Redis.Shutdown(ctx)
 
-	s.Asynq.Server.Shutdown()
-	_ = s.Asynq.Client.Close()
 }
 
 func New() *Server {

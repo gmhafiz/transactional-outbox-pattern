@@ -18,7 +18,7 @@ func main() {
 
 	mux := asynq.NewServeMux()
 
-	// we inject database dependency into the handler
+	// we inject the database as a dependency into the handler
 	mux.Handle(task.TypeEmailDelivery, task.NewEmailProcessor(s.DB))
 
 	if err := s.Asynq.Server.Run(mux); err != nil {

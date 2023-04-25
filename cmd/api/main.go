@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -45,29 +46,33 @@ func main() {
 		start(s)
 	}()
 
-	_ = gracefulShutdown(context.Background(), s)
+	gracefulShutdown(context.Background(), s)
 }
 
 func start(s *server.Server) {
 	log.Printf("Serving at %s:%s\n", s.Cfg.Api.Host, s.Cfg.Api.Port)
-	err := s.HTTPServer.ListenAndServe()
-	if err != nil {
+	if err := s.HTTPServer.ListenAndServe(); !errors.Is(http.ErrServerClosed, err) {
 		log.Fatal(err)
 	}
+	log.Println("Stopped serving new connections")
 }
 
-func gracefulShutdown(ctx context.Context, s *server.Server) error {
+func gracefulShutdown(ctx context.Context, s *server.Server) {
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	<-quit
 
 	log.Println("Shutting down...")
 
-	ctx, shutdown := context.WithTimeout(ctx, s.Cfg.Api.GracefulTimeout*time.Second)
+	ctx, shutdown := context.WithTimeout(context.Background(), s.Cfg.Api.GracefulTimeout*time.Second)
 	defer shutdown()
+
+	if err := s.HTTPServer.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server shutdown: %v\n", err)
+	}
 
 	s.CloseResources(ctx)
 
-	return s.HTTPServer.Shutdown(ctx)
+	log.Println("graceful shutdown complete.")
 }

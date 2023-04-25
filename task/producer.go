@@ -72,15 +72,15 @@ func (p *Producer) run() {
 	//	  More info: https://www.enterprisedb.com/blog/what-skip-locked-postgresql-95
 	// 3. We are also doing a SELECT, then DELETE once the transaction commits. This keeps the
 	//	  number of records in outbox table small.
-	rows, err := tx.QueryContext(ctx,
-		`
-				DELETE FROM outbox
-				WHERE id IN (SELECT o.id
-							 FROM outbox o
-							 ORDER BY id
-								 FOR UPDATE SKIP LOCKED
-							 LIMIT $1)
-				RETURNING *;`, batch)
+	rows, err := tx.QueryContext(ctx, `
+		DELETE FROM outbox
+		WHERE id IN (SELECT o.id
+					 FROM outbox o
+					 ORDER BY id
+						 FOR UPDATE SKIP LOCKED
+					 LIMIT $1)
+		RETURNING *;
+		`, batch)
 	if err != nil {
 		return
 	}
@@ -107,21 +107,23 @@ func (p *Producer) run() {
 			// If the second identical task is pushed to asynq after the retention period is over,
 			// we will get duplication of tasks. The longer retention, less chance of duplication,
 			// but at the cost of using more memory holding the IDs.
-			asynq.Retention(10*time.Minute),
+			asynq.Retention(24*time.Hour),
 		)
 		_, err = p.asynq.Client.EnqueueContext(ctx, t)
 		if err != nil {
 			// If fails to enqueue, transaction is not committed which is good.
-			// Reasons why it could fail:
+			// Reasons why enqueue could fail:
 			//  - redis is unavailable
 			//  - redis not working
 			//      - out of memory
 			//  - network failure
 			//
-			// For these reasons, this loop will attempt to send the payload to asynq (redis) again.
+			// For these reasons, this loop cycle will attempt to send the payload to asynq (redis)
+			// again.
 			//
-			// If it fails because of the task has done or in the middle or processing, we simply
-			// delete that record from outbox table because it is already sent to the queue.
+			// If it fails because the task is done or in the middle or processing, we simply
+			// delete that record from outbox table because it is already sent to the queue. Deletion
+			// is done by committing the transaction.
 			if errors.Is(err, asynq.ErrTaskIDConflict) {
 				log.Println(fmt.Errorf("preventing task duplication. task ID %s: %w", record.ID, err))
 
@@ -158,7 +160,9 @@ func (p *Producer) run() {
 	// The act of COMMIT will delete the records.
 	if err = tx.Commit(); err != nil {
 		// If committing fails, returning will cause a rollback. And those locked rows will be
-		// released for other processes or producers to pick up.
+		// released for other processes or producers to pick up. Just like before, the same tasks
+		// identified by its UUID will be re-queued and will be rejected with either
+		// ErrTaskIDConflict or ErrDuplicateTask error.
 		log.Println("failed to commit")
 		return
 	}
