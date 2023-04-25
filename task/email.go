@@ -14,26 +14,30 @@ import (
 )
 
 const (
+	// TypeEmailDelivery is a unique string used to identify this particular task which is sending
+	// an email. This unique string is also used by asynq to identify which ProcessTask() method to
+	// call.
 	TypeEmailDelivery = "email:deliver"
 )
 
+// Message is the payload that gets passed into the queue
 type Message struct {
+
+	// ID of the primary key in mail_deliveries table
 	ID int
-	//Payload any
+
+	// Mail is the actual payload of the struct
 	Mail *mail.SMTP
 }
 
-// Send is a dummy method that simulates an SMTP request
-func (m Message) Send() error {
-	time.Sleep(100 * time.Millisecond)
-
-	return nil
-}
-
+// Worker is our own custom struct that contains dependencies. It has a single method that implements
+// asynq.Handler interface
 type Worker struct {
 	db *sqlx.DB
 }
 
+// NewEmailProcessor is the registered handler of the asynq mux. It accepts any custom dependencies
+// you need.
 func NewEmailProcessor(db *sqlx.DB) *Worker {
 	return &Worker{
 		db: db,
@@ -51,20 +55,13 @@ func (w *Worker) ProcessTask(ctx context.Context, task *asynq.Task) error {
 		return err
 	}
 
-	//var email mail.SMTP
-	//if err := json.Unmarshal(msg.Mail, &email); err != nil {
-	//	log.Println(err)
-	//	_ = w.saveError(ctx, msg.ID, err)
-	//	return err
-	//}
-
 	// There is no need to row-lock because each task popped from the queue is exclusive to its
 	// respective worker.
 	_, err := w.db.ExecContext(ctx, `
-UPDATE mail_deliveries
-SET status = $1, start_time = $2, updated_at = $3
-WHERE id = $4
-`, "Started", time.Now(), time.Now(), msg.ID)
+		UPDATE mail_deliveries
+		SET status = $1, start_time = $2, updated_at = $3
+		WHERE id = $4
+		`, "Started", time.Now(), time.Now(), msg.ID)
 	if err != nil {
 		log.Println(err)
 		_ = w.saveError(ctx, msg.ID, err)
@@ -88,10 +85,10 @@ WHERE id = $4
 	// inconsistent state between mail_deliveries.status with actual email being sent.
 
 	_, err = w.db.ExecContext(ctx, `
-UPDATE mail_deliveries
-SET status = $1, end_time = $2, updated_at = $3
-WHERE id = $4
-`, "Success", time.Now(), time.Now(), msg.ID)
+		UPDATE mail_deliveries
+		SET status = $1, end_time = $2, updated_at = $3
+		WHERE id = $4
+		`, "Success", time.Now(), time.Now(), msg.ID)
 	if err != nil {
 		_ = w.saveError(ctx, msg.ID, err)
 		log.Printf("failed to update status to success for task %d\n", msg.ID)
@@ -123,10 +120,10 @@ func (w *Worker) saveError(ctx context.Context, id int, err error) error {
 	}
 
 	_, errDB := w.db.ExecContext(ctx, `
-UPDATE mail_deliveries
-SET status = $1, errors = $2, updated_at = $3
-WHERE id = $4
-`, "Failed", bytes, time.Now(), id)
+		UPDATE mail_deliveries
+		SET status = $1, errors = $2, updated_at = $3
+		WHERE id = $4
+		`, "Failed", bytes, time.Now(), id)
 	if errDB != nil {
 		log.Println(errDB)
 		err = errors.Join(errDB)

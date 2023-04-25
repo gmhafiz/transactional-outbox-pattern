@@ -29,8 +29,11 @@ services:
     ports:
       - "8080:8080"
 
-  mailhog:
-    image: "mailhog/mailhog:v1.0.1"
+  mailpit:
+    image: "axllent/mailpit:v1.4.0"
+    command:
+      - --db-file
+      - mail.db
     ports:
       - "8025:8025"
       - "1025:1025"

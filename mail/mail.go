@@ -9,7 +9,6 @@ import (
 )
 
 type SMTP struct {
-	//Config *Config
 	Config config.Mail
 
 	Content *Content
@@ -54,10 +53,9 @@ func (m *SMTP) Build(content *Content) *SMTP {
 }
 
 func (m *SMTP) Send() error {
-	auth := smtp.PlainAuth("", m.Config.Username, m.Config.Password, m.Config.Host)
 	if err := smtp.SendMail(
 		fmt.Sprintf("%s:%d", m.Config.Host, m.Config.Port),
-		auth,
+		nil,
 		m.Content.Sender,
 		m.Content.To,
 		[]byte(m.Content.Plaintext),

@@ -5,7 +5,7 @@ Transactional Outbox Pattern in Go
 # Quick start
 
 ```sh
-docker-compose up -d redis postgres mailhog asynqmon
+docker-compose up -d redis postgres mailpit asynqmon
 ```
 
 Run main api server
@@ -18,6 +18,12 @@ Run workers (as many as you want)
 
 ```sh
 go run cmd/worker/main.go
+```
+
+```
+asynq: pid=209309 2023/02/20 11:32:46.998734 INFO: Starting processing
+asynq: pid=209309 2023/02/20 11:32:46.998761 INFO: Send signal TSTP to stop processing new tasks
+asynq: pid=209309 2023/02/20 11:32:46.998768 INFO: Send signal TERM or INT to terminate the process
 ```
 
 Send email
@@ -38,10 +44,13 @@ Go to http://localhost:8025
 
 # Simulate Errors
 
-Simulate email sending error by turning off the email server
+Simulate email sending error by turning off the email server and send an email
 
 ```sh
-docker-compose stop mailhog
+docker-compose stop mailpit
+
+curl -v http://localhost:3080/api/mail/send -H 'Content-type: application/json' -d '{"from":"from@example.com","to":["to@example.com"],"subject":"Test Mail Server Is DOWN","content":"some content"}'
+
 ```
 
 Watch the task is retrying for 25 times and its `mail_deliveries` records has both a `Failed` status and error message saved.
@@ -49,7 +58,13 @@ Watch the task is retrying for 25 times and its `mail_deliveries` records has bo
 To resume, re-start the mail server
 
 ```sh
-docker-compose up -d mailhog
+docker-compose up -d mailpit
+```
+
+Shut down all containers
+
+```sh
+docker-compose down
 ```
 
 # Monitor Database
@@ -83,4 +98,28 @@ Swap: 385M used, 3710M free, 99M cached
    31 root      20    0    0K    0K sleep   0:00  0.00%  0.00% cpuhp/3
    26 root     -51    0    0K    0K sleep   0:00  0.00%  0.00% idle_inject/2
 
+```
+
+
+# Graceful Shutdown
+
+To prevent tasks from being dropped prematurely, we gracefully shut down each service properly. They
+both listen to OS signals so if these were deployed in kubernetes, it will be handled automatically.
+Otherwise, follow instructions in each section below.
+
+## API
+
+We know it is running at port `3080`
+
+```sh
+kill -SIGTERM $(lsof -t -i :3080) 
+```
+
+## Workers
+
+Each worker has its own PID. Send a `TSTP` signal to stop processing new tasks, then send a `TERM` signal to shut down the worker
+
+```sh
+kill -SIGTSTP 209309
+kill -SIGTERM 209309
 ```
