@@ -1,6 +1,6 @@
 # Introduction
 
-Transactional Outbox Pattern in Go
+Transactional Outbox Pattern in Go. Accompanies the blog post at https://www.gmhafiz.com/blog/transactional-outbox-pattern/
 
 # Quick start
 
